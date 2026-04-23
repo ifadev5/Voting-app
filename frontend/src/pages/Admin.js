@@ -29,7 +29,7 @@ export default function Admin() {
   // Add category form
   const [catName, setCatName] = useState('');
 
-  const isLoggedIn = token === 'admin-token-secret';
+  const isLoggedIn = !!token;
 
   useEffect(() => {
     if (isLoggedIn) loadAll();
@@ -65,9 +65,11 @@ export default function Admin() {
         const t = res.data.token;
         setToken(t);
         localStorage.setItem('admin_token', t);
+      } else {
+        setLoginError(res.data.message || 'Login failed.');
       }
-    } catch {
-      setLoginError('Invalid username or password.');
+    } catch (e) {
+      setLoginError(e.response?.data?.message || 'Invalid username or password.');
     }
   }
 
@@ -106,15 +108,22 @@ export default function Admin() {
     const categoryToUse = candForm.category === '__new__' ? candForm.newCategory : candForm.category;
     if (!candForm.name || !categoryToUse) return flash('Name and category are required.');
 
+    // If adding a new category, create it first
+    if (candForm.category === '__new__') {
+      try {
+        await adminAxios(token).post('/api/categories', { name: categoryToUse });
+      } catch (e) {
+        return flash(e.response?.data?.message || 'Error creating category');
+      }
+    }
+
     const fd = new FormData();
     fd.append('name', candForm.name);
     fd.append('category', categoryToUse);
     if (imageFile) fd.append('image', imageFile);
 
     try {
-      const res = await adminAxios(token).post('/api/candidates', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const res = await adminAxios(token).post('/api/candidates', fd);
       setCandidates(c => [...c, res.data]);
       setCandForm({ name: '', category: '', newCategory: '' });
       setImageFile(null);
