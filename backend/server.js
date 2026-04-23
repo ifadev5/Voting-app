@@ -170,10 +170,8 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/university-
   .then(() => {
     console.log('✅ MongoDB connected');
 
-    const PORT = process.env.PORT || 5000;
-
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`🚀 Server running on port ${PORT}`);
+    app.listen(process.env.PORT, "0.0.0.0", () => {
+      console.log(`🚀 Server running on port ${process.env.PORT}`);
     });
   })
   .catch(err => {
