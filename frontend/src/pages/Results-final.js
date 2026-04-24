@@ -6,13 +6,72 @@ const API = process.env.REACT_APP_API_URL || '';
 export default function Results() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [visible, setVisible] = useState(true);
 
   useEffect(() => {
-    axios.get(`${API}/api/results`)
-      .then(r => setResults(r.data))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    checkVisibilityAndLoad();
   }, []);
+
+  async function checkVisibilityAndLoad() {
+    try {
+      const visRes = await axios.get(`${API}/api/settings/results-visible`);
+      setVisible(visRes.data.visible);
+      if (visRes.data.visible) {
+        const res = await axios.get(`${API}/api/results`);
+        setResults(res.data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── RESULTS HIDDEN ─────────────────────────────────────────
+  if (!loading && !visible) {
+    return (
+      <div style={{
+        minHeight: '70vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+        textAlign: 'center',
+      }}>
+        <div>
+          <div style={{ fontSize: 80, marginBottom: 24 }}>🔒</div>
+          <h1 style={{ fontSize: 'clamp(24px, 5vw, 40px)', marginBottom: 16 }}>
+            Results are currently
+            <span style={{
+              display: 'block',
+              background: 'linear-gradient(135deg, #C9A84C, #E8C86A)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}>
+              Locked 🏆
+            </span>
+          </h1>
+          <p style={{ color: '#9A9488', fontSize: 16, maxWidth: 420, margin: '0 auto 24px' }}>
+            The results are being finalized. Winners will be announced soon!
+          </p>
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 10,
+            background: 'rgba(201,168,76,0.08)',
+            border: '1px solid rgba(201,168,76,0.2)',
+            borderRadius: 12,
+            padding: '14px 24px',
+            color: '#C9A84C',
+            fontSize: 14,
+            fontWeight: 600,
+          }}>
+            🗳️ Voting is still open — cast your vote now!
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container" style={{ padding: '48px 24px' }}>
@@ -52,7 +111,8 @@ export default function Results() {
                     gap: 16,
                   }}>
                     <div style={{
-                      width: 36, height: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: 36, height: 36, borderRadius: '50%',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
                       background: i === 0 ? 'rgba(201,168,76,0.2)' : '#1F1F1F',
                       color: i === 0 ? '#C9A84C' : '#9A9488',
                       fontWeight: 700, fontSize: 15, flexShrink: 0,

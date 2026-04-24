@@ -10,6 +10,7 @@ const Candidate = require("./models/Candidate");
 const Submission = require("./models/Submission");
 const Category = require("./models/Category");
 const Nomination = require('./models/Nomination');
+const Setting = require('./models/Setting');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -281,6 +282,33 @@ app.delete('/api/nominations/:id', adminAuth, async (req, res) => {
   try {
     await Nomination.findByIdAndDelete(req.params.id);
     res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// ─── SETTINGS ─────────────────────────────────────────────────
+
+// Get results visibility (public)
+app.get('/api/settings/results-visible', async (req, res) => {
+  try {
+    const setting = await Setting.findOne({ key: 'results_visible' });
+    res.json({ visible: setting ? setting.value : true });
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Toggle results visibility (admin only)
+app.post('/api/settings/results-visible', adminAuth, async (req, res) => {
+  try {
+    const { visible } = req.body;
+    await Setting.findOneAndUpdate(
+      { key: 'results_visible' },
+      { value: visible },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true, visible });
   } catch (e) {
     res.status(500).json({ message: e.message });
   }

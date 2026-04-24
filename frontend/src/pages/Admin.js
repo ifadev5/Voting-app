@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import ResultsToggle from '../components/ResultsToggle';
 
 const API = process.env.REACT_APP_API_URL || '';
 
@@ -256,6 +257,7 @@ export default function Admin() {
           {msg.text}
         </div>
       )}
+      <ResultsToggle token={token} />
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16, marginBottom: 32 }}>
