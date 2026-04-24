@@ -2,7 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Home from './pages/Home';
 import Admin from './pages/Admin';
-import Results from './pages/Results';
+import Results from './pages/Results-final';
 import Navbar from './components/Navbar';
 
 export default function App() {
