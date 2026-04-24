@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const path = require("path");
 const multer = require("multer");
-const fs = require("fs");
+const cloudinary = require("cloudinary").v2;
 
 const Candidate = require("./models/Candidate");
 const Submission = require("./models/Submission");
@@ -13,21 +13,23 @@ const Category = require("./models/Category");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Cloudinary config
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Multer — memory storage (no local disk)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-// Multer setup for image uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, "uploads")),
-  filename: (req, file, cb) => {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, unique + path.extname(file.originalname));
-  },
-});
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // ─── ADMIN AUTH ────────────────────────────────────────────────
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
@@ -41,14 +43,13 @@ app.post("/api/admin/login", (req, res) => {
   res.status(401).json({ success: false, message: "Invalid credentials" });
 });
 
-// Simple admin middleware
 function adminAuth(req, res, next) {
   const token = req.headers["x-admin-token"];
   if (token === "admin-token-secret") return next();
   res.status(403).json({ message: "Unauthorized" });
 }
 
-// ─── ROOT ─────────────────────────────────────────────────────
+// ─── ROOT ──────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   res.json({
     message: "🗳️ University Voting API is running.",
@@ -103,31 +104,40 @@ app.get("/api/candidates", async (req, res) => {
   }
 });
 
-app.post(
-  "/api/candidates",
-  adminAuth,
-  upload.single("image"),
-  async (req, res) => {
-    try {
-      const { name, category } = req.body;
-      const image = req.file
-        ? `/uploads/${req.file.filename}`
-        : req.body.image || "";
-      const candidate = new Candidate({ name, category, image });
-      await candidate.save();
-      res.status(201).json(candidate);
-    } catch (e) {
-      res.status(400).json({ message: e.message });
+app.post("/api/candidates", adminAuth, upload.single("image"), async (req, res) => {
+  try {
+    const { name, category } = req.body;
+    let imageUrl = "";
+
+    if (req.file) {
+      // Upload to Cloudinary
+      const result = await new Promise((resolve, reject) => {
+        cloudinary.uploader.upload_stream(
+          { folder: "univote" },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        ).end(req.file.buffer);
+      });
+      imageUrl = result.secure_url;
     }
-  },
-);
+
+    const candidate = new Candidate({ name, category, image: imageUrl });
+    await candidate.save();
+    res.status(201).json(candidate);
+  } catch (e) {
+    res.status(400).json({ message: e.message });
+  }
+});
 
 app.delete("/api/candidates/:id", adminAuth, async (req, res) => {
   try {
     const c = await Candidate.findByIdAndDelete(req.params.id);
-    if (c && c.image && c.image.startsWith("/uploads/")) {
-      const filePath = path.join(__dirname, c.image);
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    // If image is a Cloudinary URL, optionally delete from Cloudinary too
+    if (c && c.image && c.image.includes("cloudinary")) {
+      const publicId = c.image.split("/").slice(-1)[0].split(".")[0];
+      await cloudinary.uploader.destroy(`univote/${publicId}`).catch(() => {});
     }
     res.json({ success: true });
   } catch (e) {
@@ -138,14 +148,7 @@ app.delete("/api/candidates/:id", adminAuth, async (req, res) => {
 // ─── SUBMISSIONS ───────────────────────────────────────────────
 app.post("/api/submit-vote", async (req, res) => {
   try {
-    const {
-      fullName,
-      candidateId,
-      candidateName,
-      category,
-      amountPaid,
-      transactionRef,
-    } = req.body;
+    const { fullName, candidateId, candidateName, category, amountPaid, transactionRef } = req.body;
     if (!fullName || !candidateId || !amountPaid || !transactionRef) {
       return res.status(400).json({ message: "All fields are required." });
     }
@@ -155,13 +158,8 @@ app.post("/api/submit-vote", async (req, res) => {
     }
     const votes = Math.floor(amount / 200);
     const submission = new Submission({
-      fullName,
-      candidateId,
-      candidateName,
-      category,
-      amountPaid: amount,
-      votes,
-      transactionRef,
+      fullName, candidateId, candidateName, category,
+      amountPaid: amount, votes, transactionRef,
       status: "pending",
     });
     await submission.save();
@@ -194,7 +192,6 @@ app.post("/api/approve/:id", adminAuth, async (req, res) => {
     sub.status = "approved";
     await sub.save();
 
-    // Add votes to candidate
     await Candidate.findByIdAndUpdate(sub.candidateId, {
       $inc: { votes: sub.votes },
     });
@@ -212,7 +209,7 @@ app.post("/api/reject/:id", adminAuth, async (req, res) => {
     const sub = await Submission.findByIdAndUpdate(
       req.params.id,
       { status: "rejected" },
-      { new: true },
+      { new: true }
     );
     if (!sub) return res.status(404).json({ message: "Submission not found" });
     res.json({ success: true, message: "Submission rejected." });
@@ -240,12 +237,9 @@ app.get("/api/results", async (req, res) => {
 
 // ─── CONNECT & START ──────────────────────────────────────────
 mongoose
-  .connect(
-    process.env.MONGO_URI || "mongodb://localhost:27017/university-voting",
-  )
+  .connect(process.env.MONGO_URI || "mongodb://localhost:27017/university-voting")
   .then(() => {
     console.log("✅ MongoDB connected");
-
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });
