@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import CandidateCard from '../components/CandidateCard';
 import VoteModal from '../components/VoteModal';
+import NominationModal from '../components/NominationModal';
 
 const API = process.env.REACT_APP_API_URL || '';
 
@@ -10,6 +11,7 @@ export default function Home() {
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [voteCandidate, setVoteCandidate] = useState(null);
+  const [showNomination, setShowNomination] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,11 +20,9 @@ export default function Home() {
 
   async function loadData() {
     try {
-      const [cRes] = await Promise.all([
-        axios.get(`${API}/api/candidates`),
-      ]);
-      setCandidates(cRes.data);
-      const cats = ['All', ...new Set(cRes.data.map(c => c.category))];
+      const res = await axios.get(`${API}/api/candidates`);
+      setCandidates(res.data);
+      const cats = ['All', ...new Set(res.data.map(c => c.category))];
       setCategories(cats);
     } catch (e) {
       console.error(e);
@@ -35,7 +35,6 @@ export default function Home() {
     ? candidates
     : candidates.filter(c => c.category === selectedCategory);
 
-  // Group by category
   const grouped = {};
   filtered.forEach(c => {
     if (!grouped[c.category]) grouped[c.category] = [];
@@ -53,7 +52,7 @@ export default function Home() {
       }}>
         <div style={{ maxWidth: 640, margin: '0 auto' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#C9A84C', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 16 }}>
-            I-Fatoss Students Vote
+            University Awards
           </div>
           <h1 style={{ fontSize: 'clamp(32px, 6vw, 56px)', marginBottom: 16, lineHeight: 1.1 }}>
             Vote for Your<br />
@@ -61,18 +60,32 @@ export default function Home() {
               Favourite Candidates
             </span>
           </h1>
-          <p style={{ color: '#9A9488', fontSize: 16, maxWidth: 440, margin: '0 auto 28px' }}>
+          <p style={{ color: '#9A9488', fontSize: 16, maxWidth: 440, margin: '0 auto 20px' }}>
             Support your peers by voting. Every ₦200 counts as 1 vote. Pay via OPay and submit your transaction reference.
           </p>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.25)', borderRadius: 30, padding: '8px 18px' }}>
-            <span style={{ color: '#C9A84C', fontWeight: 700 }}>₦200</span>
-            <span style={{ color: '#9A9488' }}>=</span>
-            <span style={{ color: '#F0EDE4', fontWeight: 600 }}>1 Vote</span>
+
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.25)', borderRadius: 30, padding: '8px 18px' }}>
+              <span style={{ color: '#C9A84C', fontWeight: 700 }}>₦200</span>
+              <span style={{ color: '#9A9488' }}>=</span>
+              <span style={{ color: '#F0EDE4', fontWeight: 600 }}>1 Vote</span>
+            </div>
+            <button
+              onClick={() => setShowNomination(true)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                background: 'rgba(201,168,76,0.15)', border: '1px solid rgba(201,168,76,0.4)',
+                borderRadius: 30, padding: '8px 18px', color: '#C9A84C',
+                fontWeight: 700, fontSize: 14, cursor: 'pointer',
+              }}
+            >
+              🏆 Nominate Staff of the Year
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="container" style={{ padding: '40px 24px' }}>
+      <div className="container" style={{ padding: '40px 24px 120px' }}>
         {/* Category Filter */}
         {categories.length > 1 && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 40 }}>
@@ -81,15 +94,11 @@ export default function Home() {
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
                 style={{
-                  padding: '8px 18px',
-                  borderRadius: 30,
-                  fontSize: 13,
-                  fontWeight: 600,
+                  padding: '8px 18px', borderRadius: 30, fontSize: 13, fontWeight: 600,
                   border: selectedCategory === cat ? '1px solid #C9A84C' : '1px solid #2A2A2A',
                   background: selectedCategory === cat ? 'rgba(201,168,76,0.1)' : '#161616',
                   color: selectedCategory === cat ? '#C9A84C' : '#9A9488',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
+                  cursor: 'pointer', transition: 'all 0.2s',
                 }}
               >
                 {cat}
@@ -130,11 +139,57 @@ export default function Home() {
         )}
       </div>
 
+      {/* ── FLOATING NOMINATION BUTTON ─────────────────────── */}
+      <button
+        onClick={() => setShowNomination(true)}
+        style={{
+          position: 'fixed',
+          bottom: 28,
+          right: 28,
+          zIndex: 999,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '14px 22px',
+          borderRadius: 50,
+          background: 'linear-gradient(135deg, #C9A84C, #9A7A2E)',
+          color: '#0D0D0D',
+          fontWeight: 800,
+          fontSize: 14,
+          fontFamily: "'DM Sans', sans-serif",
+          border: 'none',
+          cursor: 'pointer',
+          boxShadow: '0 8px 32px rgba(201,168,76,0.4)',
+          transition: 'all 0.2s ease',
+          animation: 'pulse 2.5s infinite',
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.transform = 'scale(1.05)';
+          e.currentTarget.style.boxShadow = '0 12px 40px rgba(201,168,76,0.6)';
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.transform = 'scale(1)';
+          e.currentTarget.style.boxShadow = '0 8px 32px rgba(201,168,76,0.4)';
+        }}
+      >
+        🏆 Staff of the Year
+      </button>
+
+      {/* Pulse animation */}
+      <style>{`
+        @keyframes pulse {
+          0% { box-shadow: 0 8px 32px rgba(201,168,76,0.4); }
+          50% { box-shadow: 0 8px 48px rgba(201,168,76,0.7); }
+          100% { box-shadow: 0 8px 32px rgba(201,168,76,0.4); }
+        }
+      `}</style>
+
+      {/* Modals */}
       {voteCandidate && (
-        <VoteModal
-          candidate={voteCandidate}
-          onClose={() => setVoteCandidate(null)}
-        />
+        <VoteModal candidate={voteCandidate} onClose={() => setVoteCandidate(null)} />
+      )}
+      {showNomination && (
+        <NominationModal onClose={() => setShowNomination(false)} />
       )}
     </div>
   );

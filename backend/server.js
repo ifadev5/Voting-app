@@ -9,6 +9,7 @@ const cloudinary = require("cloudinary").v2;
 const Candidate = require("./models/Candidate");
 const Submission = require("./models/Submission");
 const Category = require("./models/Category");
+const Nomination = require('./models/Nomination');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -230,6 +231,56 @@ app.get("/api/results", async (req, res) => {
         .sort((a, b) => b.votes - a.votes),
     }));
     res.json(results);
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+});
+// ─── NOMINATION ROUTES ─────────────────────────────────────────
+ 
+// Submit a nomination (public - no auth needed)
+app.post('/api/nominations', async (req, res) => {
+  try {
+    const { studentName, staffName } = req.body;
+    if (!studentName || !staffName) {
+      return res.status(400).json({ message: 'Student name and staff name are required.' });
+    }
+    const nomination = new Nomination({
+      studentName: studentName.trim(),
+      staffName: staffName.trim(),
+    });
+    await nomination.save();
+    res.status(201).json({ success: true, message: 'Nomination submitted successfully!' });
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+});
+ 
+// Get all nominations (admin only)
+app.get('/api/nominations', adminAuth, async (req, res) => {
+  try {
+    const nominations = await Nomination.find().sort({ createdAt: -1 });
+ 
+    // Count nominations per staff
+    const counts = {};
+    nominations.forEach(n => {
+      const key = n.staffName.toLowerCase().trim();
+      if (!counts[key]) counts[key] = { staffName: n.staffName, count: 0 };
+      counts[key].count++;
+    });
+ 
+    const staffCounts = Object.values(counts).sort((a, b) => b.count - a.count);
+ 
+    res.json({ nominations, staffCounts });
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+});
+ 
+// Delete a nomination (admin only)
+app.delete('/api/nominations/:id', adminAuth, async (req, res) => {
+  try {
+    await Nomination.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
   } catch (e) {
     res.status(500).json({ message: e.message });
   }

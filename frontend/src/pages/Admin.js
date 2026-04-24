@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
 const API = process.env.REACT_APP_API_URL || '';
@@ -14,22 +14,22 @@ export default function Admin() {
   const [loginError, setLoginError] = useState('');
   const [tab, setTab] = useState('submissions');
 
-  // Data
   const [submissions, setSubmissions] = useState([]);
   const [candidates, setCandidates] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState('');
+  const [msg, setMsg] = useState({ text: '', type: 'success' });
 
-  // Add candidate form
   const [candForm, setCandForm] = useState({ name: '', category: '', newCategory: '' });
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
-
-  // Add category form
   const [catName, setCatName] = useState('');
 
-  const isLoggedIn = !!token;
+  // For updating individual candidate photo
+  const [updatingPhotoId, setUpdatingPhotoId] = useState(null);
+  const fileInputRef = useRef();
+
+  const isLoggedIn = token === 'admin-token-secret';
 
   useEffect(() => {
     if (isLoggedIn) loadAll();
@@ -51,9 +51,9 @@ export default function Admin() {
     setLoading(false);
   }
 
-  function flash(m) {
-    setMsg(m);
-    setTimeout(() => setMsg(''), 3000);
+  function flash(text, type = 'success') {
+    setMsg({ text, type });
+    setTimeout(() => setMsg({ text: '', type: 'success' }), 4000);
   }
 
   async function handleLogin(e) {
@@ -65,11 +65,9 @@ export default function Admin() {
         const t = res.data.token;
         setToken(t);
         localStorage.setItem('admin_token', t);
-      } else {
-        setLoginError(res.data.message || 'Login failed.');
       }
-    } catch (e) {
-      setLoginError(e.response?.data?.message || 'Invalid username or password.');
+    } catch {
+      setLoginError('Invalid username or password.');
     }
   }
 
@@ -83,7 +81,7 @@ export default function Admin() {
       const res = await adminAxios(token).post(`/api/approve/${id}`);
       flash(res.data.message);
       setSubmissions(s => s.map(x => x._id === id ? { ...x, status: 'approved' } : x));
-    } catch (e) { flash(e.response?.data?.message || 'Error'); }
+    } catch (e) { flash(e.response?.data?.message || 'Error', 'error'); }
   }
 
   async function reject(id) {
@@ -91,7 +89,7 @@ export default function Admin() {
       await adminAxios(token).post(`/api/reject/${id}`);
       flash('Submission rejected.');
       setSubmissions(s => s.map(x => x._id === id ? { ...x, status: 'rejected' } : x));
-    } catch (e) { flash(e.response?.data?.message || 'Error'); }
+    } catch (e) { flash(e.response?.data?.message || 'Error', 'error'); }
   }
 
   async function deleteCandidate(id) {
@@ -100,22 +98,13 @@ export default function Admin() {
       await adminAxios(token).delete(`/api/candidates/${id}`);
       setCandidates(c => c.filter(x => x._id !== id));
       flash('Candidate deleted.');
-    } catch (e) { flash('Error deleting candidate.'); }
+    } catch (e) { flash('Error deleting candidate.', 'error'); }
   }
 
   async function addCandidate(e) {
     e.preventDefault();
     const categoryToUse = candForm.category === '__new__' ? candForm.newCategory : candForm.category;
-    if (!candForm.name || !categoryToUse) return flash('Name and category are required.');
-
-    // If adding a new category, create it first
-    if (candForm.category === '__new__') {
-      try {
-        await adminAxios(token).post('/api/categories', { name: categoryToUse });
-      } catch (e) {
-        return flash(e.response?.data?.message || 'Error creating category');
-      }
-    }
+    if (!candForm.name || !categoryToUse) return flash('Name and category are required.', 'error');
 
     const fd = new FormData();
     fd.append('name', candForm.name);
@@ -123,14 +112,16 @@ export default function Admin() {
     if (imageFile) fd.append('image', imageFile);
 
     try {
-      const res = await adminAxios(token).post('/api/candidates', fd);
+      const res = await adminAxios(token).post('/api/candidates', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       setCandidates(c => [...c, res.data]);
       setCandForm({ name: '', category: '', newCategory: '' });
       setImageFile(null);
       setImagePreview('');
       flash('Candidate added!');
-      loadAll(); // refresh categories list too
-    } catch (e) { flash(e.response?.data?.message || 'Error'); }
+      loadAll();
+    } catch (e) { flash(e.response?.data?.message || 'Error', 'error'); }
   }
 
   async function addCategory(e) {
@@ -141,7 +132,7 @@ export default function Admin() {
       setCategories(c => [...c, res.data]);
       setCatName('');
       flash('Category added!');
-    } catch (e) { flash(e.response?.data?.message || 'Error adding category'); }
+    } catch (e) { flash(e.response?.data?.message || 'Error adding category', 'error'); }
   }
 
   async function deleteCategory(id) {
@@ -150,7 +141,7 @@ export default function Admin() {
       await adminAxios(token).delete(`/api/categories/${id}`);
       setCategories(c => c.filter(x => x._id !== id));
       flash('Category deleted.');
-    } catch (e) { flash('Error'); }
+    } catch (e) { flash('Error', 'error'); }
   }
 
   function handleImageChange(e) {
@@ -160,6 +151,35 @@ export default function Admin() {
     const reader = new FileReader();
     reader.onloadend = () => setImagePreview(reader.result);
     reader.readAsDataURL(f);
+  }
+
+  // ── UPDATE PHOTO ───────────────────────────────────────────────
+  function triggerPhotoUpdate(candidateId) {
+    setUpdatingPhotoId(candidateId);
+    setTimeout(() => fileInputRef.current?.click(), 100);
+  }
+
+  async function handlePhotoUpdate(e) {
+    const file = e.target.files[0];
+    if (!file || !updatingPhotoId) return;
+
+    flash('Uploading photo...', 'success');
+
+    const fd = new FormData();
+    fd.append('image', file);
+
+    try {
+      const res = await adminAxios(token).patch(`/api/candidates/${updatingPhotoId}/photo`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setCandidates(c => c.map(x => x._id === updatingPhotoId ? { ...x, image: res.data.image } : x));
+      flash('✅ Photo updated successfully!');
+    } catch (e) {
+      flash('Failed to update photo. Try again.', 'error');
+    } finally {
+      setUpdatingPhotoId(null);
+      e.target.value = '';
+    }
   }
 
   // ── LOGIN ──────────────────────────────────────────────────────
@@ -190,12 +210,20 @@ export default function Admin() {
     );
   }
 
-  // ── DASHBOARD ─────────────────────────────────────────────────
   const pending = submissions.filter(s => s.status === 'pending').length;
   const approved = submissions.filter(s => s.status === 'approved').length;
 
   return (
     <div className="container" style={{ padding: '32px 24px' }}>
+      {/* Hidden file input for photo update */}
+      <input
+        type="file"
+        accept="image/*"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        onChange={handlePhotoUpdate}
+      />
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
         <div>
@@ -206,9 +234,14 @@ export default function Admin() {
       </div>
 
       {/* Flash */}
-      {msg && (
-        <div style={{ background: 'rgba(76,175,126,0.1)', border: '1px solid rgba(76,175,126,0.3)', color: '#4CAF7E', borderRadius: 8, padding: '12px 16px', marginBottom: 24, fontSize: 14 }}>
-          ✓ {msg}
+      {msg.text && (
+        <div style={{
+          background: msg.type === 'error' ? 'rgba(224,90,90,0.1)' : 'rgba(76,175,126,0.1)',
+          border: `1px solid ${msg.type === 'error' ? 'rgba(224,90,90,0.3)' : 'rgba(76,175,126,0.3)'}`,
+          color: msg.type === 'error' ? '#E05A5A' : '#4CAF7E',
+          borderRadius: 8, padding: '12px 16px', marginBottom: 24, fontSize: 14
+        }}>
+          {msg.text}
         </div>
       )}
 
@@ -262,9 +295,7 @@ export default function Admin() {
                     <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                       <div>
                         <div style={{ fontWeight: 600, marginBottom: 4 }}>{s.fullName}</div>
-                        <div style={{ fontSize: 13, color: '#9A9488' }}>
-                          {s.candidateName} · {s.category}
-                        </div>
+                        <div style={{ fontSize: 13, color: '#9A9488' }}>{s.candidateName} · {s.category}</div>
                         <div style={{ fontSize: 13, color: '#9A9488', marginTop: 2 }}>
                           Ref: <span style={{ color: '#F0EDE4', fontFamily: 'monospace' }}>{s.transactionRef}</span>
                         </div>
@@ -280,12 +311,8 @@ export default function Admin() {
                     </div>
                     {s.status === 'pending' && (
                       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                        <button className="btn btn-success" style={{ fontSize: 13, padding: '8px 16px' }} onClick={() => approve(s._id)}>
-                          ✓ Approve
-                        </button>
-                        <button className="btn btn-danger" style={{ fontSize: 13, padding: '8px 16px' }} onClick={() => reject(s._id)}>
-                          ✗ Reject
-                        </button>
+                        <button className="btn btn-success" style={{ fontSize: 13, padding: '8px 16px' }} onClick={() => approve(s._id)}>✓ Approve</button>
+                        <button className="btn btn-danger" style={{ fontSize: 13, padding: '8px 16px' }} onClick={() => reject(s._id)}>✗ Reject</button>
                       </div>
                     )}
                   </div>
@@ -325,8 +352,7 @@ export default function Admin() {
               )}
               <div className="form-group">
                 <label>Photo</label>
-                <input type="file" accept="image/*" onChange={handleImageChange}
-                  style={{ color: '#9A9488', fontSize: 13 }} />
+                <input type="file" accept="image/*" onChange={handleImageChange} style={{ color: '#9A9488', fontSize: 13 }} />
                 {imagePreview && (
                   <img src={imagePreview} alt="preview" style={{ width: '100%', borderRadius: 8, marginTop: 10, maxHeight: 160, objectFit: 'cover' }} />
                 )}
@@ -337,30 +363,59 @@ export default function Admin() {
             </form>
           </div>
 
-          {/* List */}
+          {/* Candidates list with Update Photo button */}
           <div>
-            <h3 style={{ marginBottom: 16, fontSize: 17 }}>All Candidates ({candidates.length})</h3>
+            <h3 style={{ marginBottom: 6, fontSize: 17 }}>All Candidates ({candidates.length})</h3>
+            <p style={{ color: '#9A9488', fontSize: 13, marginBottom: 16 }}>
+              Click <strong style={{ color: '#C9A84C' }}>Update Photo</strong> next to any candidate to fix their picture
+            </p>
             {candidates.length === 0 ? (
               <div style={{ color: '#9A9488', padding: 40, textAlign: 'center' }}>No candidates yet.</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {candidates.map(c => (
                   <div key={c._id} style={{
-                    background: '#161616', border: '1px solid #2A2A2A', borderRadius: 10,
-                    padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 14,
+                    background: '#161616', border: `1px solid ${c.image && c.image.includes('cloudinary') ? '#2A2A2A' : 'rgba(232,168,58,0.25)'}`,
+                    borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 14,
                   }}>
-                    {c.image ? (
-                      <img src={c.image.startsWith('http') ? c.image : `${API}${c.image}`} alt={c.name}
+                    {/* Photo preview */}
+                    {c.image && c.image.includes('cloudinary') ? (
+                      <img src={c.image} alt={c.name}
                         style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
                     ) : (
-                      <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#2A2A2A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>👤</div>
+                      <div style={{
+                        width: 44, height: 44, borderRadius: '50%', background: 'rgba(232,168,58,0.1)',
+                        border: '1px solid rgba(232,168,58,0.3)', display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', fontSize: 18, flexShrink: 0,
+                      }}>⚠️</div>
                     )}
+
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600 }}>{c.name}</div>
-                      <div style={{ fontSize: 12, color: '#9A9488' }}>{c.category} · {c.votes} votes</div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{c.name}</div>
+                      <div style={{ fontSize: 12, color: '#9A9488' }}>
+                        {c.category} · {c.votes} votes
+                      </div>
+                      {!c.image || !c.image.includes('cloudinary') ? (
+                        <div style={{ fontSize: 11, color: '#E8A83A', marginTop: 2 }}>⚠ Photo missing</div>
+                      ) : (
+                        <div style={{ fontSize: 11, color: '#4CAF7E', marginTop: 2 }}>✓ Photo OK</div>
+                      )}
                     </div>
-                    <button className="btn btn-danger" style={{ fontSize: 12, padding: '6px 12px' }}
-                      onClick={() => deleteCandidate(c._id)}>Delete</button>
+
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                      <button
+                        onClick={() => triggerPhotoUpdate(c._id)}
+                        style={{
+                          padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                          background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.4)',
+                          color: '#C9A84C', cursor: 'pointer',
+                        }}
+                      >
+                        📷 Update Photo
+                      </button>
+                      <button className="btn btn-danger" style={{ fontSize: 12, padding: '6px 12px' }}
+                        onClick={() => deleteCandidate(c._id)}>Delete</button>
+                    </div>
                   </div>
                 ))}
               </div>
