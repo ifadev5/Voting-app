@@ -10,7 +10,7 @@ const Candidate = require("./models/Candidate");
 const Submission = require("./models/Submission");
 const Category = require("./models/Category");
 const Nomination = require('./models/Nomination');
-const Setting = require('./models/Setting');
+const Setting = require('./models/setting');
 
 
 const app = express();
