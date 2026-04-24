@@ -12,6 +12,7 @@ const Category = require("./models/Category");
 const Nomination = require('./models/Nomination');
 const Setting = require('./models/Setting');
 
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
